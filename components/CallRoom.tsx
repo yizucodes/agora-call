@@ -16,12 +16,11 @@ import {
 } from 'agora-rtc-react'
 
 import { VideoTile } from '@/components/VideoTile'
+import { TranscriptPanel } from '@/components/TranscriptPanel'
 import type { CallSession } from '@/components/Lobby'
+import { useTranscript } from '@/hooks/useTranscript'
 import { createRtcClient } from '@/lib/agora/client'
-import {
-  logSttStreamMessageToConsole,
-  normalizeRtcStreamUid,
-} from '@/lib/stt/debug'
+import { logSttStreamMessageToConsole, normalizeRtcStreamUid } from '@/lib/stt/debug'
 
 type SttClientSession = {
   agentId: string
@@ -51,15 +50,22 @@ function CallRoomInner({ session, onLeave }: Props) {
   const [sttBusy, setSttBusy] = useState(false)
   const [sttActionError, setSttActionError] = useState<string | null>(null)
 
+  const { displayLines, ingestPayload } = useTranscript({
+    sttAgentId: sttSession?.agentId ?? null,
+  })
+
   const streamMessageListener = useMemo(() => {
     if (!sttSession) return null
     const { subBotUid, pubBotUid } = sttSession
     return (uid: string | number, payload: Uint8Array) => {
       const n = normalizeRtcStreamUid(uid)
       if (n !== subBotUid && n !== pubBotUid) return
-      logSttStreamMessageToConsole(n, payload)
+      if (process.env.NODE_ENV === 'development') {
+        logSttStreamMessageToConsole(n, payload)
+      }
+      ingestPayload(payload)
     }
-  }, [sttSession])
+  }, [ingestPayload, sttSession])
 
   useClientEvent(client, 'stream-message', streamMessageListener)
 
@@ -113,10 +119,21 @@ function CallRoomInner({ session, onLeave }: Props) {
     setSttActionError(null)
     setSttBusy(true)
     try {
+      const subscribeRtcUids = new Set<number>()
+      subscribeRtcUids.add(session.uid)
+      for (const u of remoteUsers) {
+        const n = normalizeRtcStreamUid(u.uid)
+        if (Number.isFinite(n) && n >= 1) {
+          subscribeRtcUids.add(n)
+        }
+      }
       const res = await fetch('/api/stt/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ channel: session.channel }),
+        body: JSON.stringify({
+          channel: session.channel,
+          subscribeRtcUids: [...subscribeRtcUids],
+        }),
       })
       const body: unknown = await res.json().catch(() => ({}))
       if (!res.ok) {
@@ -151,7 +168,7 @@ function CallRoomInner({ session, onLeave }: Props) {
     } finally {
       setSttBusy(false)
     }
-  }, [session.channel])
+  }, [remoteUsers, session.channel, session.uid])
 
   const stopStt = useCallback(async () => {
     setSttActionError(null)
@@ -171,10 +188,13 @@ function CallRoomInner({ session, onLeave }: Props) {
           typeof (body as { error: unknown }).error === 'string'
             ? (body as { error: string }).error
             : `STT stop failed (${res.status})`
-        throw new Error(msg)
+        setSttSession(null)
+        setSttActionError(msg)
+        return
       }
       setSttSession(null)
     } catch (err) {
+      setSttSession(null)
       setSttActionError(err instanceof Error ? err.message : String(err))
     } finally {
       setSttBusy(false)
@@ -242,7 +262,7 @@ function CallRoomInner({ session, onLeave }: Props) {
               disabled={sttBusy || !isConnected}
               style={{ padding: '0.5rem 1rem' }}
             >
-              Start transcription (console log)
+              Start transcription
             </button>
           )}
           <button type="button" onClick={() => void handleLeave()} style={{ padding: '0.5rem 1rem' }}>
@@ -251,12 +271,59 @@ function CallRoomInner({ session, onLeave }: Props) {
         </div>
       </header>
 
-      {sttSession && (
-        <p style={{ margin: '0 0 1rem', color: '#444', fontSize: 13 }}>
-          STT agent <code>{sttSession.agentId}</code> · bots{' '}
-          <code>{sttSession.subBotUid}</code> / <code>{sttSession.pubBotUid}</code> — open DevTools
-          Console for <code>[stt stream-message]</code> rows.
-        </p>
+      {sttSession && process.env.NODE_ENV === 'development' && (
+        <aside
+          role="note"
+          aria-label="Development-only STT debug info"
+          style={{
+            margin: '0 0 1rem',
+            padding: '0.5rem 0.65rem',
+            fontSize: 12,
+            lineHeight: 1.45,
+            color: '#333',
+            background: '#f0f4f8',
+            border: '1px solid #c5d4e0',
+            borderRadius: 6,
+            display: 'flex',
+            flexWrap: 'wrap',
+            alignItems: 'baseline',
+            gap: '0.35rem 0.5rem',
+          }}
+        >
+          <span
+            style={{
+              fontSize: 10,
+              fontWeight: 700,
+              letterSpacing: '0.04em',
+              textTransform: 'uppercase',
+              color: '#fff',
+              background: '#5c6bc0',
+              padding: '0.15rem 0.4rem',
+              borderRadius: 4,
+            }}
+          >
+            Dev
+          </span>
+          <span>
+            STT agent <code style={{ fontSize: '0.95em' }}>{sttSession.agentId}</code>
+            {sttSession.subBotUid === sttSession.pubBotUid ? (
+              <>
+                {' '}
+                · bot UID <code style={{ fontSize: '0.95em' }}>{sttSession.pubBotUid}</code>
+              </>
+            ) : (
+              <>
+                {' '}
+                · bots{' '}
+                <code style={{ fontSize: '0.95em' }}>{sttSession.subBotUid}</code> /{' '}
+                <code style={{ fontSize: '0.95em' }}>{sttSession.pubBotUid}</code>
+              </>
+            )}
+          </span>
+          <span style={{ color: '#555', flex: '1 1 100%' }}>
+            Console: filter for <code>[stt stream-message]</code> to inspect raw payloads.
+          </span>
+        </aside>
       )}
 
       {sttActionError && (
@@ -300,6 +367,8 @@ function CallRoomInner({ session, onLeave }: Props) {
           </VideoTile>
         ))}
       </div>
+
+      <TranscriptPanel lines={displayLines} active={Boolean(sttSession)} />
     </main>
   )
 }
