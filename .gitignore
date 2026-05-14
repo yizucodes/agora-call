@@ -1,0 +1,23 @@
+# Dependencies
+/node_modules
+
+# Next.js
+/.next/
+/out/
+
+# Env (secrets)
+.env*.local
+
+# Agora customer key download (never commit)
+key_and_secret.txt
+
+# Debug / OS
+npm-debug.log*
+.DS_Store
+
+# Typescript / tooling
+*.tsbuildinfo
+
+# IDE
+.idea
+.vscode
