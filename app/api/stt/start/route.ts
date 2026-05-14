@@ -1,31 +1,27 @@
 import { NextResponse } from 'next/server'
 
 import { requireSttServerEnv } from '@/lib/env'
+import { getSttAgent, joinSttAgent } from '@/lib/stt/agora'
 import {
-  acquireBuilderToken,
-  querySttTask,
-  startSttTask,
-} from '@/lib/stt/agora'
-import { parseSttChannelFromBody } from '@/lib/stt/channel'
+  parseSttChannelFromBody,
+  parseSubscribeRtcUidsFromBody,
+} from '@/lib/stt/channel'
 import {
+  deleteSttAgentForChannel,
   getSttAgentForChannel,
   setSttAgentForChannel,
 } from '@/lib/stt/store'
 
+/** Agora RTC UID range [1, 2^32-1]; avoid 0 (auto-assign / invalid for our token flow). */
+const MAX_RTC_UID = 0xffff_ffff
+
 function randomBotUid(): number {
-  return Math.floor(Math.random() * 1e9)
+  return 1 + Math.floor(Math.random() * (MAX_RTC_UID - 1))
 }
 
-function pickDistinctBotUids(): { subBotUid: number; pubBotUid: number } {
-  let subBotUid = randomBotUid()
-  let pubBotUid = randomBotUid()
-  while (pubBotUid === subBotUid) {
-    pubBotUid = randomBotUid()
-  }
-  return { subBotUid, pubBotUid }
-}
+const STALE_STT_AGENT_STATUSES = new Set(['STOPPED', 'FAILED'])
 
-function newBuilderInstanceId(): string {
+function newSttAgentName(): string {
   const suffix = crypto.randomUUID().replace(/-/g, '')
   return `stt_${suffix}`.slice(0, 64)
 }
@@ -44,6 +40,11 @@ export async function POST(req: Request) {
   }
   const { channel } = parsed
 
+  const subs = parseSubscribeRtcUidsFromBody(body)
+  if (!subs.ok) {
+    return NextResponse.json({ error: subs.error }, { status: 400 })
+  }
+
   let env
   try {
     env = requireSttServerEnv()
@@ -54,8 +55,13 @@ export async function POST(req: Request) {
 
   const existing = getSttAgentForChannel(channel)
   if (existing) {
-    const q = await querySttTask(env, existing.agentId, existing.builderToken)
-    if (q.ok) {
+    const q = await getSttAgent(env, existing.agentId)
+    const goneFromAgora = !q.ok && q.status === 404
+    const terminalOnAgora =
+      q.ok && STALE_STT_AGENT_STATUSES.has(q.status)
+    if (goneFromAgora || terminalOnAgora) {
+      deleteSttAgentForChannel(channel)
+    } else if (q.ok) {
       return NextResponse.json({
         agentId: q.taskId,
         status: q.status,
@@ -63,31 +69,24 @@ export async function POST(req: Request) {
         subBotUid: existing.subBotUid,
         pubBotUid: existing.pubBotUid,
       })
+    } else {
+      return NextResponse.json(
+        { error: q.message },
+        {
+          status:
+            q.status >= 400 && q.status < 600 ? q.status : 502,
+        }
+      )
     }
-    return NextResponse.json({
-      agentId: existing.agentId,
-      status: 'UNKNOWN',
-      channel,
-      subBotUid: existing.subBotUid,
-      pubBotUid: existing.pubBotUid,
-      agoraQueryError: q.message,
-    })
   }
 
-  const acquired = await acquireBuilderToken(env, newBuilderInstanceId())
-  if (!acquired.ok) {
-    return NextResponse.json(
-      { error: acquired.message },
-      { status: acquired.status >= 400 && acquired.status < 600 ? acquired.status : 502 }
-    )
-  }
+  const botUid = randomBotUid()
 
-  const { subBotUid, pubBotUid } = pickDistinctBotUids()
-
-  const started = await startSttTask(env, acquired.tokenName, {
+  const started = await joinSttAgent(env, {
+    name: newSttAgentName(),
     channelName: channel,
-    subBotUid,
-    pubBotUid,
+    botUid,
+    subscribeRtcUids: subs.uids.length > 0 ? subs.uids : undefined,
   })
 
   if (!started.ok) {
@@ -99,16 +98,15 @@ export async function POST(req: Request) {
 
   setSttAgentForChannel(channel, {
     agentId: started.taskId,
-    builderToken: acquired.tokenName,
-    subBotUid,
-    pubBotUid,
+    subBotUid: botUid,
+    pubBotUid: botUid,
   })
 
   return NextResponse.json({
     agentId: started.taskId,
     status: started.status,
     channel,
-    subBotUid,
-    pubBotUid,
+    subBotUid: botUid,
+    pubBotUid: botUid,
   })
 }

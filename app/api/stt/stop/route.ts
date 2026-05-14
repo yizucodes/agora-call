@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 
 import { requireSttServerEnv } from '@/lib/env'
-import { stopSttTask } from '@/lib/stt/agora'
+import { leaveSttAgent, listRunningSttAgentIdsForChannel } from '@/lib/stt/agora'
 import { parseSttChannelFromBody } from '@/lib/stt/channel'
 import { deleteSttAgentForChannel, getSttAgentForChannel } from '@/lib/stt/store'
 
@@ -19,14 +19,6 @@ export async function POST(req: Request) {
   }
   const { channel } = parsed
 
-  const record = getSttAgentForChannel(channel)
-  if (record === undefined) {
-    return NextResponse.json(
-      { error: 'No STT task is running for this channel' },
-      { status: 404 }
-    )
-  }
-
   let env
   try {
     env = requireSttServerEnv()
@@ -35,18 +27,51 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: message }, { status: 500 })
   }
 
-  const stopped = await stopSttTask(env, record.agentId, record.builderToken)
-  if (!stopped.ok) {
+  const record = getSttAgentForChannel(channel)
+  if (record !== undefined) {
+    const stopped = await leaveSttAgent(env, record.agentId)
+    if (!stopped.ok) {
+      return NextResponse.json(
+        { error: stopped.message, agentId: record.agentId, channel },
+        {
+          status:
+            stopped.status >= 400 && stopped.status < 600 ? stopped.status : 502,
+        }
+      )
+    }
+    deleteSttAgentForChannel(channel)
+    return NextResponse.json({ ok: true, channel })
+  }
+
+  const listed = await listRunningSttAgentIdsForChannel(env, channel)
+  if (!listed.ok) {
     return NextResponse.json(
-      { error: stopped.message, agentId: record.agentId, channel },
+      { error: listed.message },
       {
         status:
-          stopped.status >= 400 && stopped.status < 600 ? stopped.status : 502,
+          listed.status >= 400 && listed.status < 600 ? listed.status : 502,
       }
     )
   }
+  if (listed.agentIds.length === 0) {
+    return NextResponse.json(
+      { error: 'No STT task is running for this channel' },
+      { status: 404 }
+    )
+  }
 
-  deleteSttAgentForChannel(channel)
+  for (const agentId of listed.agentIds) {
+    const stopped = await leaveSttAgent(env, agentId)
+    if (!stopped.ok) {
+      return NextResponse.json(
+        { error: stopped.message, agentId, channel },
+        {
+          status:
+            stopped.status >= 400 && stopped.status < 600 ? stopped.status : 502,
+        }
+      )
+    }
+  }
 
   return NextResponse.json({ ok: true, channel })
 }

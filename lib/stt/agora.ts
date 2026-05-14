@@ -3,11 +3,12 @@ import type { SttServerEnv } from '@/lib/env'
 import { buildRtcPublisherToken } from '@/lib/agora/token'
 
 /**
- * Agora Real-Time STT REST **v6.x** (builder token + tasks).
+ * Agora Real-Time STT REST **v7.x** (`join` / `get` / `leave` / `list`).
  * Uses customer key/secret Basic auth; RTC app id/certificate for bot tokens.
+ * @see https://docs.agora.io/en/real-time-stt/reference/migration-guide-6-to-7
  */
-const BUILDER_TOKENS_PATH = '/v1/projects'
-const SPEECH_PREFIX = '/rtsc/speech-to-text'
+
+const STT_V7_PREFIX = '/api/speech-to-text/v1/projects'
 
 /**
  * Base URL for STT REST calls from `AGORA_STT_REGION`.
@@ -50,85 +51,33 @@ async function readJson(res: Response): Promise<unknown> {
   }
 }
 
-/** Best-effort error string from Agora JSON error bodies (`message`, `detail`, `reason`). */
+/** Best-effort error string from Agora JSON (v6 `message`, v7 `reason` / `detail`). */
 function messageFromAgoraJson(body: unknown): string | undefined {
-  if (body && typeof body === 'object') {
-    const o = body as Record<string, unknown>
-    if (typeof o.message === 'string') {
-      return o.message
-    }
-    if (typeof o.detail === 'string') {
-      return o.detail
-    }
-    if (typeof o.reason === 'string') {
-      return o.reason
-    }
+  if (!body || typeof body !== 'object') {
+    return undefined
+  }
+  const o = body as Record<string, unknown>
+  if (typeof o.message === 'string') {
+    return o.message
+  }
+  const reason = typeof o.reason === 'string' ? o.reason : ''
+  const detail = typeof o.detail === 'string' ? o.detail : ''
+  if (reason !== '' || detail !== '') {
+    return [reason, detail].filter(Boolean).join(': ')
+  }
+  if (typeof o.detail === 'string') {
+    return o.detail
   }
   return undefined
 }
 
-/** Result of requesting a short-lived builder token (`tokenName`) before starting a task. */
-export type AcquireBuilderTokenResult =
-  | { ok: true; tokenName: string; createTs: number; instanceId: string }
-  | { ok: false; status: number; message: string }
-
-/**
- * Acquires a builder token (`tokenName`) used as `builderToken` on start/query/stop.
- * Must call {@link startSttTask} within the token validity window (Agora: ~5 minutes).
- */
-export async function acquireBuilderToken(
-  env: SttServerEnv,
-  instanceId: string
-): Promise<AcquireBuilderTokenResult> {
+function sttV7ProjectBase(env: SttServerEnv): string {
   const base = sttRestBaseUrl(env.AGORA_STT_REGION)
-  const url = `${base}${BUILDER_TOKENS_PATH}/${encodeURIComponent(env.AGORA_APP_ID)}${SPEECH_PREFIX}/builderTokens`
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      Authorization: basicAuthHeader(
-        env.AGORA_CUSTOMER_KEY,
-        env.AGORA_CUSTOMER_SECRET
-      ),
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ instanceId }),
-  })
-  const body = await readJson(res)
-  if (!res.ok) {
-    return {
-      ok: false,
-      status: res.status,
-      message:
-        messageFromAgoraJson(body) ??
-        `Acquire builder token failed (${res.status})`,
-    }
-  }
-  if (
-    !body ||
-    typeof body !== 'object' ||
-    typeof (body as { tokenName?: unknown }).tokenName !== 'string'
-  ) {
-    return {
-      ok: false,
-      status: 502,
-      message: 'Unexpected acquire builder token response shape',
-    }
-  }
-  const b = body as {
-    tokenName: string
-    createTs?: number
-    instanceId?: string
-  }
-  return {
-    ok: true,
-    tokenName: b.tokenName,
-    createTs: typeof b.createTs === 'number' ? b.createTs : 0,
-    instanceId: typeof b.instanceId === 'string' ? b.instanceId : instanceId,
-  }
+  return `${base}${STT_V7_PREFIX}/${encodeURIComponent(env.AGORA_APP_ID)}`
 }
 
-/** Outcome of starting an STT task; on success includes Agora `taskId` (we expose it as `agentId` in HTTP APIs). */
-export type StartSttTaskResult =
+/** Outcome of starting an STT agent (`join`). Exposes Agora `agent_id` as `taskId` for route compatibility. */
+export type JoinSttAgentResult =
   | {
       ok: true
       taskId: string
@@ -138,28 +87,38 @@ export type StartSttTaskResult =
   | { ok: false; status: number; message: string }
 
 /**
- * Starts Real-Time STT for `channelName`: mints RTC publisher tokens for sub/pub bots,
- * posts to Agora `…/tasks?builderToken=…`, and subscribes to all channel audio (`subscribeAudioUids: ["all"]`).
+ * Starts Real-Time STT for `channelName` via v7 `join`.
+ * v7 expects `subBotUid` and `pubBotUid` to be the same; one RTC user subscribes and publishes captions.
  */
-export async function startSttTask(
+export async function joinSttAgent(
   env: SttServerEnv,
-  builderToken: string,
   params: {
+    name: string
     channelName: string
-    subBotUid: number
-    pubBotUid: number
+    botUid: number
+    /** v7: each entry must be a numeric RTC UID string; do not use `"all"`. */
+    subscribeRtcUids?: number[]
   }
-): Promise<StartSttTaskResult> {
-  const sub = buildRtcPublisherToken(params.channelName, params.subBotUid)
-  const pub = buildRtcPublisherToken(params.channelName, params.pubBotUid)
+): Promise<JoinSttAgentResult> {
+  const tok = buildRtcPublisherToken(params.channelName, params.botUid)
+  const uidStr = String(params.botUid)
 
-  const base = sttRestBaseUrl(env.AGORA_STT_REGION)
-  const url = new URL(
-    `${base}${BUILDER_TOKENS_PATH}/${encodeURIComponent(env.AGORA_APP_ID)}${SPEECH_PREFIX}/tasks`
-  )
-  url.searchParams.set('builderToken', builderToken)
+  const rtcConfig: Record<string, unknown> = {
+    channelName: params.channelName,
+    subBotUid: uidStr,
+    subBotToken: tok.token,
+    pubBotUid: uidStr,
+    pubBotToken: tok.token,
+  }
+  if (
+    params.subscribeRtcUids !== undefined &&
+    params.subscribeRtcUids.length > 0
+  ) {
+    rtcConfig.subscribeAudioUids = params.subscribeRtcUids.map(String)
+  }
 
-  const res = await fetch(url.toString(), {
+  const url = `${sttV7ProjectBase(env)}/join`
+  const res = await fetch(url, {
     method: 'POST',
     headers: {
       Authorization: basicAuthHeader(
@@ -169,16 +128,10 @@ export async function startSttTask(
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
+      name: params.name,
       languages: ['en-US'],
       maxIdleTime: 3600,
-      rtcConfig: {
-        channelName: params.channelName,
-        subBotUid: String(params.subBotUid),
-        subBotToken: sub.token,
-        pubBotUid: String(params.pubBotUid),
-        pubBotToken: pub.token,
-        subscribeAudioUids: ['all'],
-      },
+      rtcConfig,
     }),
   })
 
@@ -188,49 +141,48 @@ export async function startSttTask(
       ok: false,
       status: res.status,
       message:
-        messageFromAgoraJson(body) ?? `Start STT task failed (${res.status})`,
+        messageFromAgoraJson(body) ?? `Join STT agent failed (${res.status})`,
     }
   }
-  if (
-    !body ||
-    typeof body !== 'object' ||
-    typeof (body as { taskId?: unknown }).taskId !== 'string'
-  ) {
+  if (!body || typeof body !== 'object') {
     return {
       ok: false,
       status: 502,
-      message: 'Unexpected start STT task response shape',
+      message: 'Unexpected join STT response shape',
     }
   }
-  const b = body as { taskId: string; createTs?: number; status?: string }
+  const b = body as { agent_id?: unknown; create_ts?: unknown; status?: unknown }
+  if (typeof b.agent_id !== 'string') {
+    return {
+      ok: false,
+      status: 502,
+      message: 'Unexpected join STT response: missing agent_id',
+    }
+  }
+  const createTs =
+    typeof b.create_ts === 'number' && Number.isFinite(b.create_ts)
+      ? b.create_ts
+      : 0
+  const status = typeof b.status === 'string' ? b.status : 'UNKNOWN'
   return {
     ok: true,
-    taskId: b.taskId,
-    createTs: typeof b.createTs === 'number' ? b.createTs : 0,
-    status: typeof b.status === 'string' ? b.status : 'UNKNOWN',
+    taskId: b.agent_id,
+    createTs,
+    status,
   }
 }
 
-/** Current task status from Agora’s query endpoint. */
-export type QuerySttTaskResult =
+/** Current agent status from v7 `get`. */
+export type GetSttAgentResult =
   | { ok: true; taskId: string; createTs: number; status: string }
   | { ok: false; status: number; message: string }
 
-/**
- * Queries STT task status. Requires the same `builderToken` used when the task was started.
- */
-export async function querySttTask(
+export async function getSttAgent(
   env: SttServerEnv,
-  taskId: string,
-  builderToken: string
-): Promise<QuerySttTaskResult> {
-  const base = sttRestBaseUrl(env.AGORA_STT_REGION)
-  const url = new URL(
-    `${base}${BUILDER_TOKENS_PATH}/${encodeURIComponent(env.AGORA_APP_ID)}${SPEECH_PREFIX}/tasks/${encodeURIComponent(taskId)}`
-  )
-  url.searchParams.set('builderToken', builderToken)
-
-  const res = await fetch(url.toString(), {
+  agentId: string
+): Promise<GetSttAgentResult> {
+  const url = `${sttV7ProjectBase(env)}/agents/${encodeURIComponent(agentId)}`
+  const res = await fetch(url, {
     method: 'GET',
     headers: {
       Authorization: basicAuthHeader(
@@ -245,51 +197,119 @@ export async function querySttTask(
       ok: false,
       status: res.status,
       message:
-        messageFromAgoraJson(body) ?? `Query STT task failed (${res.status})`,
+        messageFromAgoraJson(body) ?? `Get STT agent failed (${res.status})`,
     }
   }
-  if (
-    !body ||
-    typeof body !== 'object' ||
-    typeof (body as { taskId?: unknown }).taskId !== 'string'
-  ) {
+  if (!body || typeof body !== 'object') {
     return {
       ok: false,
       status: 502,
-      message: 'Unexpected query STT task response shape',
+      message: 'Unexpected get STT agent response shape',
     }
   }
-  const b = body as { taskId: string; createTs?: number; status?: string }
+  const b = body as {
+    agent_id?: unknown
+    create_ts?: unknown
+    status?: unknown
+  }
+  const tid = typeof b.agent_id === 'string' ? b.agent_id : agentId
+  if (tid === '') {
+    return {
+      ok: false,
+      status: 502,
+      message: 'Unexpected get STT agent response: missing agent_id',
+    }
+  }
+  const createTs =
+    typeof b.create_ts === 'number' && Number.isFinite(b.create_ts)
+      ? b.create_ts
+      : 0
+  const status = typeof b.status === 'string' ? b.status : 'UNKNOWN'
   return {
     ok: true,
-    taskId: b.taskId,
-    createTs: typeof b.createTs === 'number' ? b.createTs : 0,
-    status: typeof b.status === 'string' ? b.status : 'UNKNOWN',
+    taskId: tid,
+    createTs,
+    status,
   }
 }
 
-/** Result of asking Agora to stop a running STT task. */
-export type StopSttTaskResult =
+export type LeaveSttAgentResult =
   | { ok: true }
   | { ok: false; status: number; message: string }
 
-/**
- * Stops the STT task on Agora. Requires the same `builderToken` used at start.
- * After a successful stop, acquire a **new** builder token before starting again.
- */
-export async function stopSttTask(
-  env: SttServerEnv,
-  taskId: string,
-  builderToken: string
-): Promise<StopSttTaskResult> {
-  const base = sttRestBaseUrl(env.AGORA_STT_REGION)
-  const url = new URL(
-    `${base}${BUILDER_TOKENS_PATH}/${encodeURIComponent(env.AGORA_APP_ID)}${SPEECH_PREFIX}/tasks/${encodeURIComponent(taskId)}`
-  )
-  url.searchParams.set('builderToken', builderToken)
+export type ListSttAgentsResult =
+  | { ok: true; agentIds: string[] }
+  | { ok: false; status: number; message: string }
 
-  const res = await fetch(url.toString(), {
-    method: 'DELETE',
+/**
+ * Lists RUNNING STT agents for a channel (v7 `list`, GET `…/agents?channel=&state=2`).
+ * Used when this server lost in-memory state but Agora may still have an agent.
+ */
+export async function listRunningSttAgentIdsForChannel(
+  env: SttServerEnv,
+  channelName: string
+): Promise<ListSttAgentsResult> {
+  const qs = new URLSearchParams({
+    channel: channelName,
+    state: '2',
+  })
+  const url = `${sttV7ProjectBase(env)}/agents?${qs}`
+  const res = await fetch(url, {
+    method: 'GET',
+    headers: {
+      Authorization: basicAuthHeader(
+        env.AGORA_CUSTOMER_KEY,
+        env.AGORA_CUSTOMER_SECRET
+      ),
+    },
+  })
+  const body = await readJson(res)
+  if (!res.ok) {
+    return {
+      ok: false,
+      status: res.status,
+      message:
+        messageFromAgoraJson(body) ?? `List STT agents failed (${res.status})`,
+    }
+  }
+  if (!body || typeof body !== 'object') {
+    return {
+      ok: false,
+      status: 502,
+      message: 'Unexpected list STT agents response shape',
+    }
+  }
+  const data = (body as { data?: unknown }).data
+  if (!data || typeof data !== 'object') {
+    return { ok: true, agentIds: [] }
+  }
+  const list = (data as { list?: unknown }).list
+  if (!Array.isArray(list)) {
+    return { ok: true, agentIds: [] }
+  }
+  const agentIds: string[] = []
+  for (const item of list) {
+    if (
+      item &&
+      typeof item === 'object' &&
+      typeof (item as { agent_id?: unknown }).agent_id === 'string'
+    ) {
+      agentIds.push((item as { agent_id: string }).agent_id)
+    }
+  }
+  return { ok: true, agentIds }
+}
+
+/**
+ * Stops the STT agent (v7 `leave`, POST).
+ */
+export async function leaveSttAgent(
+  env: SttServerEnv,
+  agentId: string
+): Promise<LeaveSttAgentResult> {
+  const url = `${sttV7ProjectBase(env)}/agents/${encodeURIComponent(agentId)}/leave`
+  const res = await fetch(url, {
+    method: 'POST',
     headers: {
       Authorization: basicAuthHeader(
         env.AGORA_CUSTOMER_KEY,
@@ -303,7 +323,7 @@ export async function stopSttTask(
       ok: false,
       status: res.status,
       message:
-        messageFromAgoraJson(body) ?? `Stop STT task failed (${res.status})`,
+        messageFromAgoraJson(body) ?? `Leave STT agent failed (${res.status})`,
     }
   }
   return { ok: true }

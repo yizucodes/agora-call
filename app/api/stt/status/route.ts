@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 import { requireSttServerEnv } from '@/lib/env'
-import { querySttTask } from '@/lib/stt/agora'
+import { getSttAgent } from '@/lib/stt/agora'
 import { findChannelByAgentId, getSttAgentForChannel } from '@/lib/stt/store'
 
 export async function GET(req: NextRequest) {
@@ -37,7 +37,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: message }, { status: 500 })
   }
 
-  const q = await querySttTask(env, record.agentId, record.builderToken)
+  const q = await getSttAgent(env, record.agentId)
   if (!q.ok) {
     return NextResponse.json(
       { error: q.message, agentId: record.agentId, channel },

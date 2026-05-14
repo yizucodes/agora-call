@@ -3,10 +3,9 @@
  * Production would use Redis/DB keyed by channel.
  */
 export type SttAgentRecord = {
-  /** Agora `taskId` from the start-task response; exposed to clients as `agentId`. */
+  /** Agora v7 `agent_id` from `join`; exposed to clients as `agentId`. */
   agentId: string
-  /** Same `tokenName` returned by acquire; required for query/stop. */
-  builderToken: string
+  /** Single STT bot UID (v7: subscriber and publisher are the same user). */
   subBotUid: number
   pubBotUid: number
 }
