@@ -107,7 +107,7 @@ The server starts the STT agent, but transcript data does not return to the serv
 1. Know the STT bot UID returned from `/api/stt/start`.
 2. Filter stream messages so only bot messages are parsed.
 3. Inspect the raw payload shape in development.
-4. Parse Agora's protobuf `Text` payload, with a JSON fallback.
+4. Parse each payload by trying Agora's JSON transcript shape first, then decoding protobuf `Text` if JSON does not match.
 5. Merge final and partial transcript segments for display.
 
 Investigation flow:
@@ -118,9 +118,9 @@ flowchart TD
   Bot --> Listen["Listen for stream-message events"]
   Listen --> Filter["Ignore non-bot UIDs"]
   Filter --> Log["Log payload length, hex, and base64"]
-  Log --> Decode["Implement protobuf Text decoder"]
-  Decode --> Fallback["Add JSON fallback"]
-  Fallback --> Smoke["Run parser smoke test"]
+  Log --> Json["Try JSON transcript shape"]
+  Json --> Proto["Decode protobuf Text if JSON does not match"]
+  Proto --> Smoke["Run parser smoke test"]
   Smoke --> Live["Run two-tab live call"]
   Live --> Accuracy["Investigate transcript accuracy"]
 ```
