@@ -1,12 +1,11 @@
 'use client'
 
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   AgoraRTCProvider,
   LocalUser,
   RemoteUser,
   useClientEvent,
-  useConnectionState,
   useJoin,
   useLocalCameraTrack,
   useLocalMicrophoneTrack,
@@ -21,6 +20,8 @@ import type { CallSession } from '@/components/Lobby'
 import { useTranscript } from '@/hooks/useTranscript'
 import { createRtcClient } from '@/lib/agora/client'
 import { logSttStreamMessageToConsole, normalizeRtcStreamUid } from '@/lib/stt/debug'
+
+import './interview-room.css'
 
 type SttClientSession = {
   agentId: string
@@ -44,11 +45,13 @@ export default function CallRoom({ session, onLeave }: Props) {
 
 function CallRoomInner({ session, onLeave }: Props) {
   const client = useRTCClient()
-  const connectionState = useConnectionState()
 
   const [sttSession, setSttSession] = useState<SttClientSession | null>(null)
   const [sttBusy, setSttBusy] = useState(false)
   const [sttActionError, setSttActionError] = useState<string | null>(null)
+  const [transcriptOpen, setTranscriptOpen] = useState(false)
+  const [micEnabled, setMicEnabled] = useState(true)
+  const [camEnabled, setCamEnabled] = useState(true)
 
   const { displayLines, ingestPayload } = useTranscript({
     sttAgentId: sttSession?.agentId ?? null,
@@ -95,7 +98,7 @@ function CallRoomInner({ session, onLeave }: Props) {
     }
   }, [session.channel, session.uid])
 
-  const { isConnected, error: joinError, isLoading: joinLoading } = useJoin(
+  const { isConnected, error: joinError } = useJoin(
     joinArgs,
     true
   )
@@ -103,6 +106,16 @@ function CallRoomInner({ session, onLeave }: Props) {
   const { localMicrophoneTrack, error: micError } = useLocalMicrophoneTrack(true)
   const { localCameraTrack, error: camError } = useLocalCameraTrack(true)
   usePublish([localMicrophoneTrack, localCameraTrack], isConnected)
+
+  useEffect(() => {
+    if (!localMicrophoneTrack) return
+    void localMicrophoneTrack.setEnabled(micEnabled)
+  }, [localMicrophoneTrack, micEnabled])
+
+  useEffect(() => {
+    if (!localCameraTrack) return
+    void localCameraTrack.setEnabled(camEnabled)
+  }, [localCameraTrack, camEnabled])
 
   const remoteUsers = useRemoteUsers()
 
@@ -114,6 +127,12 @@ function CallRoomInner({ session, onLeave }: Props) {
       return n !== subBotUid && n !== pubBotUid
     })
   }, [remoteUsers, sttSession])
+
+  const spotlightRemote = remoteUsersForGrid[0] ?? null
+  const otherRemotes = useMemo(
+    () => remoteUsersForGrid.slice(1),
+    [remoteUsersForGrid]
+  )
 
   const startStt = useCallback(async () => {
     setSttActionError(null)
@@ -226,149 +245,231 @@ function CallRoomInner({ session, onLeave }: Props) {
         : String(setupError)
 
   return (
-    <main style={{ padding: '1.5rem', maxWidth: '72rem', margin: '0 auto' }}>
-      <header
-        style={{
-          display: 'flex',
-          flexWrap: 'wrap',
-          alignItems: 'center',
-          gap: '0.75rem',
-          marginBottom: '1rem',
-        }}
-      >
-        <div style={{ flex: '1 1 auto', minWidth: 0 }}>
-          <h1 style={{ margin: 0, fontSize: '1.25rem' }}>In call</h1>
-          <p style={{ margin: '0.25rem 0 0', color: '#444', fontSize: 14 }}>
-            {session.displayName} · channel <strong>{session.channel}</strong> ·
-            uid <strong>{session.uid}</strong> · RTC{' '}
-            <strong>{connectionState}</strong>
-            {joinLoading ? ' · joining…' : null}
+    <div className="interview-root">
+      <header className="interview-header">
+        <div>
+          <h1 className="interview-brand">Agora Call</h1>
+          <p className="interview-meta">
+            {session.displayName} · channel {session.channel} · uid {session.uid}
           </p>
         </div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center' }}>
+        <div className="interview-header-actions">
           {sttSession ? (
             <button
               type="button"
+              className="ir-pill ir-pill--outline-purple"
               onClick={() => void stopStt()}
               disabled={sttBusy}
-              style={{ padding: '0.5rem 1rem' }}
             >
               Stop transcription
             </button>
           ) : (
             <button
               type="button"
+              className="ir-pill ir-pill--purple"
               onClick={() => void startStt()}
               disabled={sttBusy || !isConnected}
-              style={{ padding: '0.5rem 1rem' }}
             >
               Start transcription
             </button>
           )}
-          <button type="button" onClick={() => void handleLeave()} style={{ padding: '0.5rem 1rem' }}>
-            Leave
+          <button
+            type="button"
+            className={`ir-pill ir-pill--purple${transcriptOpen ? ' ir-pill--active' : ''}`}
+            onClick={() => setTranscriptOpen((v) => !v)}
+            aria-pressed={transcriptOpen}
+          >
+            Transcript
+          </button>
+          <button type="button" className="ir-pill ir-pill--red" onClick={() => void handleLeave()}>
+            End Interview
           </button>
         </div>
       </header>
 
+      {(sttActionError || setupErrorMessage) && (
+        <div className="interview-alerts">
+          {sttActionError && (
+            <p role="alert">
+              {sttActionError}
+            </p>
+          )}
+          {setupErrorMessage && (
+            <p role="alert">
+              {setupErrorMessage}
+            </p>
+          )}
+        </div>
+      )}
+
       {sttSession && process.env.NODE_ENV === 'development' && (
-        <aside
-          role="note"
-          aria-label="Development-only STT debug info"
-          style={{
-            margin: '0 0 1rem',
-            padding: '0.5rem 0.65rem',
-            fontSize: 12,
-            lineHeight: 1.45,
-            color: '#333',
-            background: '#f0f4f8',
-            border: '1px solid #c5d4e0',
-            borderRadius: 6,
-            display: 'flex',
-            flexWrap: 'wrap',
-            alignItems: 'baseline',
-            gap: '0.35rem 0.5rem',
-          }}
-        >
-          <span
+        <aside className="interview-dev-note" role="note" aria-label="Development-only STT debug info">
+          <div
             style={{
-              fontSize: 10,
-              fontWeight: 700,
-              letterSpacing: '0.04em',
-              textTransform: 'uppercase',
-              color: '#fff',
-              background: '#5c6bc0',
-              padding: '0.15rem 0.4rem',
-              borderRadius: 4,
+              padding: '0.5rem 0.65rem',
+              fontSize: 12,
+              lineHeight: 1.45,
+              color: '#333',
+              background: '#f0f4f8',
+              border: '1px solid #c5d4e0',
+              borderRadius: 8,
+              display: 'flex',
+              flexWrap: 'wrap',
+              alignItems: 'baseline',
+              gap: '0.35rem 0.5rem',
             }}
           >
-            Dev
-          </span>
-          <span>
-            STT agent <code style={{ fontSize: '0.95em' }}>{sttSession.agentId}</code>
-            {sttSession.subBotUid === sttSession.pubBotUid ? (
-              <>
-                {' '}
-                · bot UID <code style={{ fontSize: '0.95em' }}>{sttSession.pubBotUid}</code>
-              </>
-            ) : (
-              <>
-                {' '}
-                · bots{' '}
-                <code style={{ fontSize: '0.95em' }}>{sttSession.subBotUid}</code> /{' '}
-                <code style={{ fontSize: '0.95em' }}>{sttSession.pubBotUid}</code>
-              </>
-            )}
-          </span>
-          <span style={{ color: '#555', flex: '1 1 100%' }}>
-            Console: filter for <code>[stt stream-message]</code> to inspect raw payloads.
-          </span>
+            <span
+              style={{
+                fontSize: 10,
+                fontWeight: 700,
+                letterSpacing: '0.04em',
+                textTransform: 'uppercase',
+                color: '#fff',
+                background: '#5c6bc0',
+                padding: '0.15rem 0.4rem',
+                borderRadius: 4,
+              }}
+            >
+              Dev
+            </span>
+            <span>
+              STT agent <code style={{ fontSize: '0.95em' }}>{sttSession.agentId}</code>
+              {sttSession.subBotUid === sttSession.pubBotUid ? (
+                <>
+                  {' '}
+                  · bot UID <code style={{ fontSize: '0.95em' }}>{sttSession.pubBotUid}</code>
+                </>
+              ) : (
+                <>
+                  {' '}
+                  · bots{' '}
+                  <code style={{ fontSize: '0.95em' }}>{sttSession.subBotUid}</code> /{' '}
+                  <code style={{ fontSize: '0.95em' }}>{sttSession.pubBotUid}</code>
+                </>
+              )}
+            </span>
+            <span style={{ color: '#555', flex: '1 1 100%' }}>
+              Console: filter for <code>[stt stream-message]</code> to inspect raw payloads.
+            </span>
+          </div>
         </aside>
       )}
 
-      {sttActionError && (
-        <p style={{ color: '#b00020', marginBottom: '1rem' }} role="alert">
-          {sttActionError}
-        </p>
-      )}
+      <div className="interview-shell">
+        <div className="interview-stage-wrap">
+          <div className="interview-stage">
+            <div className="interview-col-left">
+              <VideoTile
+                label="You"
+                inactiveVideo={!localCameraTrack || !camEnabled}
+              >
+                <LocalUser
+                  audioTrack={localMicrophoneTrack}
+                  videoTrack={localCameraTrack}
+                  cameraOn={Boolean(localCameraTrack) && camEnabled}
+                  micOn={Boolean(localMicrophoneTrack) && micEnabled}
+                  playAudio
+                  playVideo
+                  style={{ width: '100%', height: '100%' }}
+                />
+              </VideoTile>
+              {otherRemotes.map((user) => (
+                <VideoTile
+                  key={String(user.uid)}
+                  label={`User ${normalizeRtcStreamUid(user.uid)}`}
+                  inactiveVideo={!user.videoTrack}
+                >
+                  <RemoteUser
+                    user={user}
+                    playVideo
+                    playAudio
+                    style={{ width: '100%', height: '100%' }}
+                  />
+                </VideoTile>
+              ))}
+            </div>
 
-      {setupErrorMessage && (
-        <p style={{ color: '#b00020', marginBottom: '1rem' }} role="alert">
-          {setupErrorMessage}
-        </p>
-      )}
+            <div className="interview-col-right">
+              {spotlightRemote ? (
+                <VideoTile
+                  fill
+                  label={`User ${normalizeRtcStreamUid(spotlightRemote.uid)}`}
+                  inactiveVideo={!spotlightRemote.videoTrack}
+                >
+                  <RemoteUser
+                    user={spotlightRemote}
+                    playVideo
+                    playAudio
+                    style={{ width: '100%', height: '100%' }}
+                  />
+                </VideoTile>
+              ) : (
+                <div className="interview-spotlight-empty" role="status">
+                  Waiting for someone to join this channel…
+                </div>
+              )}
+            </div>
+          </div>
 
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
-          gap: '0.75rem',
-        }}
-      >
-        <VideoTile label={`You (${session.displayName})`}>
-          <LocalUser
-            audioTrack={localMicrophoneTrack}
-            videoTrack={localCameraTrack}
-            cameraOn={Boolean(localCameraTrack)}
-            micOn={Boolean(localMicrophoneTrack)}
-            playAudio
-            playVideo
-            style={{ width: '100%', height: '100%' }}
-          />
-        </VideoTile>
-        {remoteUsersForGrid.map((user) => (
-          <VideoTile key={String(user.uid)} label={`Remote ${user.uid}`}>
-            <RemoteUser
-              user={user}
-              playVideo
-              playAudio
-              style={{ width: '100%', height: '100%' }}
-            />
-          </VideoTile>
-        ))}
+          <div className="interview-device-bar">
+            <button
+              type="button"
+              className="interview-device-btn"
+              onClick={() => setMicEnabled((v) => !v)}
+              disabled={!localMicrophoneTrack}
+            >
+              <span className="interview-device-icon" aria-hidden>
+                🎤
+              </span>
+              <span className="interview-device-meta">
+                <span className="interview-device-kicker">Your microphone</span>
+                <span className={`interview-device-state${micEnabled ? '' : ' is-muted'}`}>
+                  {micEnabled ? 'Active' : 'Muted'}
+                </span>
+              </span>
+            </button>
+            <button
+              type="button"
+              className="interview-device-btn"
+              onClick={() => setCamEnabled((v) => !v)}
+              disabled={!localCameraTrack}
+            >
+              <span className="interview-device-icon" aria-hidden>
+                📷
+              </span>
+              <span className="interview-device-meta">
+                <span className="interview-device-kicker">Your camera</span>
+                <span className={`interview-device-state${camEnabled && localCameraTrack ? '' : ' is-muted'}`}>
+                  {camEnabled && localCameraTrack ? 'Active' : 'Inactive'}
+                </span>
+              </span>
+            </button>
+          </div>
+
+          <div className="interview-footer-bar" aria-hidden>
+            <span />
+            <span />
+            <span />
+            <span />
+            <span />
+            <span />
+            <span />
+            <span />
+          </div>
+        </div>
+
+        <aside
+          className={`interview-transcript-drawer${transcriptOpen ? ' is-open' : ''}`}
+          aria-hidden={!transcriptOpen}
+        >
+          {transcriptOpen ? (
+            <div className="interview-transcript-drawer-inner">
+              <TranscriptPanel lines={displayLines} active={Boolean(sttSession)} variant="drawer" />
+            </div>
+          ) : null}
+        </aside>
       </div>
-
-      <TranscriptPanel lines={displayLines} active={Boolean(sttSession)} />
-    </main>
+    </div>
   )
 }
