@@ -43,6 +43,22 @@ I used Opus 4.7 first to create `docs/FRAMEWORK.md`, an initial problem decompos
 
 I also used AI as a planning and review partner: first to break the project into checkpoints, then to break the summary feature into quality gates, and later to investigate transcript accuracy without immediately changing code.
 
+## Representative Prompts
+
+These five are the **highest-signal** prompts for an evaluator: they stress **scope control, official API alignment, evidence-led debugging, root-cause separation, and observe-before-modeling**—rather than open-ended “implement everything” delegation.
+
+1. **High-impact framework review** — "Do not write code… Do not create `PLAN.md` yet… Report only high impact corrections…" with explicit checks on `FRAMEWORK.md`: required assessment behavior, entities, two-day realism, risky assumptions, clarify vs assume, and what to cut to protect the core demo.
+
+2. **Doc-to-repo alignment for Agora Real-Time STT v7** — Paste a self-contained audit that maps official v7 REST endpoints (`join`, `query`, `leave`, `update`, `list`) to this repo’s behavior, then execute a bounded set of patches and **update `PLAN.md`** so the written plan matches the API actually implemented.
+
+3. **Evidence-based debugging** — Paste a failing terminal excerpt ("What do you think of these issues?") and the **exact** Agora error text (for example `subscribeAudioUids should include digit string, uid should range [1, 2^32-1]`) when STT fails from the UI, instead of asking for a fix without a repro artifact.
+
+4. **Root-cause investigation without code changes** — "You are senior engineer — **do not change code** — investigate the issues with transcript accuracy." That kept the focus on STT/audio and demo conditions before tuning the summary path.
+
+5. **Observe before parsing** — Confirm the Agora STT v7 REST flow (not older builder-token assumptions), **log and inspect raw RTC `stream-message` payloads** in development, then implement the protobuf/JSON parser—so parser work followed measured payloads, not guesses.
+
+**Also used during delivery (shorter checklist style):** sketch the take-home as inputs, outputs, entities, flow, assumptions, and skips; author checkpoint-style `PLAN.md` with goals, files, behavior, and verification per step; follow `CLAUDE.md` and `docs/4_CHECKPOINT_IMPLEMENT_VERIFY.md` for single-checkpoint implementation; run `docs/5_REVIEW_DIFF.md` after checkpoints; keep API routes thin with logic in `lib/`; mock vs live data and quality gates for the summary step; live two-tab verification for transcript; Checkpoint 8 with Mermaid in `ARCHITECTURE.md` / README; align `ARCHITECTURE.md` wording to the implemented flow.
+
 ## Where AI Helped
 
 AI helped most in five places:
