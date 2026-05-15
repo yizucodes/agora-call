@@ -43,27 +43,6 @@ I used Opus 4.7 first to create `docs/FRAMEWORK.md`, an initial problem decompos
 
 I also used AI as a planning and review partner: first to break the project into checkpoints, then to break the summary feature into quality gates, and later to investigate transcript accuracy without immediately changing code.
 
-## Representative Prompts
-
-These are representative prompts from the development process:
-
-1. "How far am I in the plan?"
-2. "To do step 7, do I need to mock results of a conversation between 2 users to create a good summary at first?"
-3. "You are senior engineer - what are other steps to make sure that step 7 is done with high quality?"
-4. "Execute the recommended order as senior engineer."
-5. "You are senior engineer - do not change code - investigate the issues with transcript accuracy."
-6. "Do Checkpoint 8 as senior engineer, include architecture diagrams as Mermaid diagrams so they can render well on markdown."
-
-Earlier implementation prompts also focused on the core build:
-
-- Sketch this take-home exercise as inputs, outputs, entities, flow, assumptions, and what to skip.
-- Follow `CLAUDE.md` and implement only this checkpoint from `PLAN.md`; before editing, state the goal, smallest safe fix, and expected files; after editing, run the smallest useful verification and report files changed, constraints preserved, verification, and remaining risks.
-- Review the current working tree against `PLAN.md` for this checkpoint only; inspect plan, status, diff, and report must-fix issues only with file/line references.
-- Build a minimal Next.js App Router demo for Agora RTC, Real-Time STT, and AI meeting notes.
-- Keep API routes thin and move business logic into `lib/`.
-- Confirm the Agora STT v7 REST flow and avoid older builder-token assumptions.
-- Inspect raw STT stream-message payloads before writing the parser.
-
 ## Where AI Helped
 
 AI helped most in five places:
