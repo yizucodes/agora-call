@@ -1,6 +1,8 @@
-# Agora RTC + STT + AI Summary Demo
+# Agora Call: RTC + STT + AI Summary Demo
 
 Next.js app that connects two browser tabs into an Agora video call, starts Agora Real-Time STT for the call, displays a live transcript, and generates structured meeting notes from the transcript.
+
+<img width="1226" height="828" alt="thumbnail" src="https://github.com/user-attachments/assets/02226ddd-ba15-4006-abdd-711e6cda44d0" />
 
 ## What Works
 
