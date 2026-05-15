@@ -203,7 +203,6 @@ lib/
   summary/                    Summary types and OpenAI helper
 scripts/
   stt-parse-smoke.ts          Offline parser smoke test
-DEMO.md                       Demo recording checklist and script
 WRITEUP.md                    Implementation approach and tradeoffs
 ARCHITECTURE.md               Additional Mermaid architecture diagrams
 ```
@@ -216,7 +215,9 @@ ARCHITECTURE.md               Additional Mermaid architecture diagrams
 | `npm run build` | Production build |
 | `npm run start` | Serve a production build |
 | `npm run typecheck` | Run TypeScript checks |
-| `npm test` | Run the STT parser smoke test |
+| `npm test` | Run the STT parser smoke test via `npx --yes tsx scripts/stt-parse-smoke.ts` |
+
+Note: `tsx` is intentionally not committed as a project dependency. On a fresh machine, `npm test` may need network access so `npx` can download the runner, unless it is already cached.
 
 ## Known Gaps And Improvements
 
@@ -225,7 +226,6 @@ ARCHITECTURE.md               Additional Mermaid architecture diagrams
 - Transcript quality depends heavily on mic setup, echo, and Agora STT recognition. A production system should add keyword hints, audio-quality checks, and better transcript post-processing.
 - Transcript fragments are displayed as finalized STT segments. Merging nearby final fragments into sentence-like blocks would improve summary input.
 - There is no auth, persistence, deployment hardening, or token refresh.
-- The demo video is expected as a separate `demo.mp4` file or hosted link. Use `DEMO.md` as the recording checklist.
 
 ## Verification Performed
 
@@ -234,5 +234,7 @@ npm run typecheck
 npm test
 npm run build
 ```
+
+`npm run typecheck` and `npm test` were re-run during final review. `npm test` completed with `stt-parse-smoke: ok`.
 
 The summary route was also checked with mocked transcript payloads for malformed, empty, partial-only, and normal two-speaker transcripts.
