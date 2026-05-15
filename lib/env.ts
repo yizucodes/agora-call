@@ -25,6 +25,13 @@ export type SttServerEnvKey = (typeof STT_SERVER_ENV_KEYS)[number]
 
 export type SttServerEnv = Record<SttServerEnvKey, string>
 
+/** Subset required for summary routes only. */
+export const OPENAI_SERVER_ENV_KEYS = ['OPENAI_API_KEY'] as const
+
+export type OpenAiServerEnvKey = (typeof OPENAI_SERVER_ENV_KEYS)[number]
+
+export type OpenAiServerEnv = Record<OpenAiServerEnvKey, string>
+
 /**
  * Read and validate server env vars when invoked (e.g. from `route.ts` handlers).
  * Does not validate when this module is imported.
@@ -59,6 +66,32 @@ export function requireSttServerEnv(): SttServerEnv {
   const env = {} as SttServerEnv
 
   for (const key of STT_SERVER_ENV_KEYS) {
+    const value = process.env[key]
+    if (value === undefined || value.trim() === '') {
+      missing.push(key)
+      continue
+    }
+    env[key] = value.trim()
+  }
+
+  if (missing.length > 0) {
+    throw new Error(
+      `Missing required environment variables: ${missing.join(', ')}`
+    )
+  }
+
+  return env
+}
+
+/**
+ * Env vars for summary API routes only. Use this so Agora credentials are not required
+ * when exercising `/api/summary` with mocked transcript fixtures.
+ */
+export function requireOpenAiServerEnv(): OpenAiServerEnv {
+  const missing: string[] = []
+  const env = {} as OpenAiServerEnv
+
+  for (const key of OPENAI_SERVER_ENV_KEYS) {
     const value = process.env[key]
     if (value === undefined || value.trim() === '') {
       missing.push(key)
