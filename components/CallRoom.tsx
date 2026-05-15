@@ -465,7 +465,12 @@ function CallRoomInner({ session, onLeave }: Props) {
         >
           {transcriptOpen ? (
             <div className="interview-transcript-drawer-inner">
-              <TranscriptPanel lines={displayLines} active={Boolean(sttSession)} variant="drawer" />
+              <TranscriptPanel
+                lines={displayLines}
+                active={Boolean(sttSession)}
+                localUid={session.uid}
+                variant="drawer"
+              />
             </div>
           ) : null}
         </aside>

@@ -331,28 +331,38 @@
   flex-direction: column;
 }
 
-/* Transcript drawer panel (list view; bubbles land in a follow-up commit) */
-.tp-drawer {
+/* Transcript panel — dark chat bubbles (SPEAKER = blue, YOU = green) */
+.tp-transcript {
   flex: 1;
   display: flex;
   flex-direction: column;
   min-height: 0;
   margin: 0;
   padding: 0.85rem 1rem;
-  background: var(--ir-surface);
+  background: #0f1117;
   border-radius: var(--ir-radius-lg);
-  border: 1px solid #e2e3e8;
+  border: 1px solid #252830;
   box-shadow: var(--ir-shadow);
 }
 
-.tp-drawer h2 {
+.tp-transcript--inline {
+  margin-top: 1.25rem;
+  min-height: 12rem;
+  max-height: 22rem;
+}
+
+.tp-transcript--drawer {
+  flex: 1;
+}
+
+.tp-transcript-title {
   margin: 0 0 0.65rem;
   font-size: 0.9375rem;
   font-weight: 600;
-  color: var(--ir-text);
+  color: #e8e8ec;
 }
 
-.tp-drawer .tp-body {
+.tp-transcript-body {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -360,19 +370,55 @@
   line-height: 1.45;
 }
 
-.tp-drawer .tp-empty {
-  margin: 0;
-  color: var(--ir-muted);
+.tp-empty {
+  margin: 0 0 0.65rem;
+  color: #8b8d98;
   font-size: 0.8125rem;
 }
 
-.tp-drawer ol {
+.tp-messages {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
   margin: 0;
-  padding: 0 0 0 1.1rem;
+  padding: 0;
 }
 
-.tp-drawer li {
-  margin-bottom: 0.35rem;
+.tp-msg {
+  margin: 0;
+  border-radius: 10px;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.tp-msg-role {
+  margin: 0 0 0.35rem;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.tp-msg-text {
+  margin: 0;
+  color: #fff;
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+
+.tp-msg--blue {
+  background: #1a2744;
+  border-color: #355a94;
+}
+
+.tp-msg--green {
+  background: #153428;
+  border-color: #2d6b47;
+}
+
+.tp-msg--partial .tp-msg-text {
+  font-style: italic;
+  opacity: 0.88;
 }
 
 /* Local / remote video tiles */
