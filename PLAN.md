@@ -130,9 +130,128 @@ JSON download, polished UI, speaker diarization beyond raw UID, toasts, page-unl
 
 **Files**: `app/api/summary/route.ts`, `lib/summary/openai.ts`, `components/SummaryPanel.tsx`.
 
-**Behavior**: POST `{segments}` → OpenAI `gpt-4o-mini` with `response_format: json_schema` → returns `{summary, keyPoints[], decisions[], actionItems[]}`. UI shows panel with sections.
+**Behavior**: POST `{segments}` → OpenAI `gpt-4o-mini` with `response_format: json_schema` → returns `MeetingSummary`. UI shows panel with sections.
 
-**Verify**: After short test call, Generate Summary returns non-empty structured object within ~10s. Edge: empty transcript → returns friendly empty-state object, not 500.
+### Checkpoint 7.1 — Summary contract
+
+**Goal**: Define one stable summary shape used by the API, OpenAI helper, and UI.
+
+**Files**: `lib/summary/types.ts` (or colocated export in `lib/summary/openai.ts` if keeping the footprint small).
+
+**Contract**:
+
+```ts
+type MeetingSummary = {
+  summary: string
+  keyPoints: string[]
+  decisions: string[]
+  actionItems: {
+    owner?: string
+    task: string
+    dueDate?: string
+  }[]
+}
+```
+
+**Verify**: Empty, successful, and error-adjacent cases all preserve this shape when a summary is returned. No UI code depends on undocumented fields.
+
+### Checkpoint 7.2 — Input validation + transcript normalization
+
+**Goal**: Accept only usable transcript data and send a compact transcript to the model.
+
+**Files**: `app/api/summary/route.ts`, `lib/summary/openai.ts`.
+
+**Behavior**:
+
+- Route accepts `POST { segments }`.
+- `segments` must be an array; malformed bodies return `400`.
+- Only final lines (`isFinal === true`) are summarized.
+- Empty / whitespace-only text is ignored.
+- Transcript is normalized to lines like `Speaker 1001: text`.
+- Very large transcripts are capped before calling OpenAI.
+
+**Verify**: Malformed request returns `400`; partial-only transcript returns the friendly empty-state object; normal mocked transcript produces normalized input without raw segment noise.
+
+### Checkpoint 7.3 — Empty transcript behavior
+
+**Goal**: Empty input is a valid state, not a server error.
+
+**Files**: `app/api/summary/route.ts`, `lib/summary/openai.ts`, `components/SummaryPanel.tsx`.
+
+**Behavior**: If there are no usable final transcript lines, return:
+
+```json
+{
+  "summary": "No transcript content is available yet.",
+  "keyPoints": [],
+  "decisions": [],
+  "actionItems": []
+}
+```
+
+**Verify**: UI renders the empty summary gracefully; no OpenAI call is made for empty normalized transcript.
+
+### Checkpoint 7.4 — OpenAI structured output helper
+
+**Goal**: Keep model-specific logic isolated and deterministic.
+
+**Files**: `lib/summary/openai.ts`.
+
+**Behavior**:
+
+- Uses server-side `OPENAI_API_KEY`.
+- Uses `gpt-4o-mini` and structured JSON schema output.
+- Prompt says: use only the transcript; do not invent decisions, owners, due dates, or action items.
+- Temperature is low.
+- Helper normalizes or rejects unexpected model output before returning to the route.
+
+**Verify**: Mocked two-speaker transcript returns non-empty `summary` and useful arrays. Transcript with no explicit decisions/action items returns empty arrays for those sections.
+
+### Checkpoint 7.5 — Route-level API verification
+
+**Goal**: Prove `/api/summary` works without Agora or live STT.
+
+**Files**: `app/api/summary/route.ts`, optional `scripts/summary-smoke.ts`.
+
+**Verify with fixtures**:
+
+- Empty transcript fixture.
+- Normal two-speaker meeting fixture with clear decisions/action items.
+- Messy transcript fixture with filler, repeats, partials, and no clear owner for at least one task.
+
+**Pass condition**: All responses are valid `MeetingSummary` objects; bad request returns `400`; OpenAI/API errors return useful non-2xx JSON, not an unhandled exception.
+
+### Checkpoint 7.6 — Summary panel UI states
+
+**Goal**: Make summary generation usable and demo-safe.
+
+**Files**: `components/SummaryPanel.tsx`, `components/CallRoom.tsx`.
+
+**Behavior**:
+
+- Idle state before generation.
+- Loading state while request is in flight.
+- Success state with Summary, Key Points, Decisions, Action Items.
+- Error state with retry path.
+- Generate button disabled while loading.
+- Generate button uses current transcript `displayLines`.
+
+**Verify**: UI behaves correctly with empty transcript, mocked transcript, route error, and successful response.
+
+### Checkpoint 7.7 — End-to-end summary verification
+
+**Goal**: Confirm summary works with the real transcript path.
+
+**Verify**: After a short two-tab call, start STT, speak, confirm transcript lines render, stop STT, click Generate Summary, and get structured notes within ~10s.
+
+**Done definition**:
+
+- `npm run typecheck` passes.
+- Any summary smoke script passes if added.
+- `/api/summary` works with mocked `curl` payloads.
+- UI can generate from current transcript.
+- Empty transcript returns the friendly empty-state object.
+- Model output does not invent owners/due dates when absent.
 
 ## Checkpoint 8 — README, WRITEUP.md, demo video
 
