@@ -6,7 +6,7 @@ Smallest end-to-end Agora RTC + Real-Time STT + AI summary demo. Built in checkp
 
 ---
 
-## Required product behavior (from INSTRUCTIONS.md)
+## Features
 
 1. Two browser tabs can join the same Agora RTC video call.
 2. App can start and stop Agora Real-Time STT for that call.
