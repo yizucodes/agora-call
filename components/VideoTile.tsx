@@ -5,35 +5,30 @@ import type { ReactNode } from 'react'
 export function VideoTile({
   label,
   children,
+  className,
+  inactiveVideo,
+  fill,
 }: {
   label: string
   children: ReactNode
+  className?: string
+  /** When true, shows a centered “No video” overlay (camera off or unavailable). */
+  inactiveVideo?: boolean
+  /** Fill the parent flex/grid cell instead of a fixed 4:3 tile (e.g. main remote stage). */
+  fill?: boolean
 }) {
   return (
     <div
-      style={{
-        position: 'relative',
-        aspectRatio: '4 / 3',
-        background: '#000',
-        borderRadius: 8,
-        overflow: 'hidden',
-      }}
+      className={['video-tile', fill ? 'video-tile--fill' : '', className].filter(Boolean).join(' ')}
     >
-      <div style={{ position: 'absolute', inset: 0 }}>{children}</div>
-      <span
-        style={{
-          position: 'absolute',
-          left: 8,
-          bottom: 8,
-          padding: '2px 6px',
-          fontSize: 12,
-          color: '#fff',
-          background: 'rgba(0,0,0,0.55)',
-          borderRadius: 4,
-        }}
-      >
-        {label}
-      </span>
+      <div className="video-tile__media">{children}</div>
+      {inactiveVideo ? (
+        <div className="video-tile__placeholder" aria-hidden>
+          <span className="video-tile__placeholder-icon">📷</span>
+          <span>No video</span>
+        </div>
+      ) : null}
+      <span className="video-tile__label">{label}</span>
     </div>
   )
 }
