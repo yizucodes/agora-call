@@ -47,6 +47,11 @@ OPENAI_API_KEY=
 
 `AGORA_STT_REGION` may be `global`, `default`, a region such as `ap-southeast-1`, or a full `https://...` Agora REST host if your account requires one.
 
+**Where to get credentials**
+
+- **Agora** — [https://console.agora.io/](https://console.agora.io/): project **App ID** and **primary certificate** for RTC tokens; enable **Real-Time STT** and create or copy **RESTful API** customer **key** and **secret** for `AGORA_CUSTOMER_KEY` / `AGORA_CUSTOMER_SECRET`
+- **OpenAI** — [https://platform.openai.com/](https://platform.openai.com/): create an **API key** for `OPENAI_API_KEY` (billing / usage limits apply per your OpenAI account).
+
 ## Demo Flow
 
 ### [Demo video link](https://youtu.be/ZcQgJ19Q3Gs?si=4zngMimG3mkT2Awf)
