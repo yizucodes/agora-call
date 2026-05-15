@@ -13,7 +13,14 @@
   --ir-radius-pill: 999px;
   --ir-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 
+  /* Viewport lock: column flex + flex:1 on .interview-shell only works with a definite main size */
   min-height: 100vh;
+  height: 100vh;
+  max-height: 100vh;
+  min-height: 100dvh;
+  height: 100dvh;
+  max-height: 100dvh;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   background: var(--ir-bg);
@@ -126,6 +133,7 @@
 .interview-stage-wrap {
   flex: 1;
   min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
@@ -135,6 +143,7 @@
 .interview-transcript-drawer {
   flex: 0 0 0;
   width: 0;
+  min-height: 0;
   overflow: hidden;
   opacity: 0;
   transition:
@@ -145,6 +154,12 @@
 .interview-transcript-drawer.is-open {
   flex: 0 0 min(360px, 38vw);
   width: min(360px, 38vw);
+  min-height: 0;
+  max-height: 100%;
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   opacity: 1;
   padding-left: 0.75rem;
 }
@@ -161,6 +176,7 @@
 
   .interview-transcript-drawer.is-open .interview-transcript-drawer-inner {
     max-height: min(46vh, 420px);
+    min-height: 0;
   }
 
   .interview-shell {
@@ -190,13 +206,15 @@
   flex-direction: column;
   gap: 0.5rem;
   min-width: 0;
+  min-height: 0;
 }
 
 .interview-col-right {
   min-width: 0;
-  min-height: 280px;
+  min-height: 0;
   display: flex;
   flex-direction: column;
+  gap: 0.75rem;
 }
 
 .interview-spotlight-empty {
@@ -284,25 +302,6 @@
   font-weight: 400;
 }
 
-.interview-footer-bar {
-  height: 6px;
-  border-radius: 4px;
-  background: #e6e7eb;
-  overflow: hidden;
-  display: flex;
-  margin-top: auto;
-}
-
-.interview-footer-bar span {
-  flex: 1;
-  height: 100%;
-  background: transparent;
-}
-
-.interview-footer-bar span:nth-child(-n + 3) {
-  background: linear-gradient(90deg, #f48b8b, var(--ir-red));
-}
-
 .interview-alerts {
   max-width: 1200px;
   width: 100%;
@@ -316,17 +315,10 @@
   color: #b00020;
 }
 
-.interview-dev-note {
-  max-width: 1200px;
-  width: 100%;
-  margin: 0 auto;
-  padding: 0 1.25rem 0.5rem;
-}
-
 /* Transcript drawer wrapper */
 .interview-transcript-drawer-inner {
-  height: 100%;
-  min-height: 240px;
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
 }
@@ -353,6 +345,7 @@
 
 .tp-transcript--drawer {
   flex: 1;
+  min-height: 0;
 }
 
 .tp-transcript-title {
@@ -475,4 +468,111 @@
 .video-tile__placeholder-icon {
   font-size: 1.25rem;
   opacity: 0.85;
+}
+
+/* Summary panel */
+.summary-panel {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.9rem 1rem;
+  border-radius: var(--ir-radius-lg);
+  border: 1px solid #e2e3e8;
+  background: var(--ir-surface);
+  box-shadow: var(--ir-shadow);
+}
+
+.summary-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.summary-header h2,
+.summary-section h3 {
+  margin: 0;
+  color: var(--ir-text);
+}
+
+.summary-header h2 {
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.summary-header p {
+  margin: 0.15rem 0 0;
+  color: var(--ir-muted);
+  font-size: 0.75rem;
+}
+
+.summary-generate-btn {
+  flex: 0 0 auto;
+  border: 1px solid #d6cfe8;
+  border-radius: var(--ir-radius-pill);
+  background: #fff;
+  color: var(--ir-purple);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  padding: 0.45rem 0.85rem;
+}
+
+.summary-generate-btn:hover:not(:disabled) {
+  border-color: var(--ir-purple);
+  background: #f8f6fd;
+}
+
+.summary-generate-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.summary-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.summary-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.summary-section h3 {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ir-muted);
+}
+
+.summary-section p,
+.summary-section ul,
+.summary-empty,
+.summary-error {
+  margin: 0;
+  font-size: 0.83rem;
+  line-height: 1.45;
+}
+
+.summary-section ul {
+  padding-left: 1.1rem;
+}
+
+.summary-section li + li {
+  margin-top: 0.25rem;
+}
+
+.summary-empty {
+  color: var(--ir-muted);
+}
+
+.summary-error {
+  color: #b00020;
 }

@@ -16,10 +16,12 @@ import {
 
 import { VideoTile } from '@/components/VideoTile'
 import { TranscriptPanel } from '@/components/TranscriptPanel'
+import { SummaryPanel } from '@/components/SummaryPanel'
 import type { CallSession } from '@/components/Lobby'
 import { useTranscript } from '@/hooks/useTranscript'
 import { createRtcClient } from '@/lib/agora/client'
 import { logSttStreamMessageToConsole, normalizeRtcStreamUid } from '@/lib/stt/debug'
+import type { MeetingSummary } from '@/lib/summary/types'
 
 import './interview-room.css'
 
@@ -52,6 +54,9 @@ function CallRoomInner({ session, onLeave }: Props) {
   const [transcriptOpen, setTranscriptOpen] = useState(false)
   const [micEnabled, setMicEnabled] = useState(true)
   const [camEnabled, setCamEnabled] = useState(true)
+  const [summary, setSummary] = useState<MeetingSummary | null>(null)
+  const [summaryBusy, setSummaryBusy] = useState(false)
+  const [summaryError, setSummaryError] = useState<string | null>(null)
 
   const { displayLines, ingestPayload } = useTranscript({
     sttAgentId: sttSession?.agentId ?? null,
@@ -182,6 +187,8 @@ function CallRoomInner({ session, onLeave }: Props) {
         subBotUid: data.subBotUid,
         pubBotUid: data.pubBotUid,
       })
+      setSummary(null)
+      setSummaryError(null)
     } catch (err) {
       setSttActionError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -220,6 +227,43 @@ function CallRoomInner({ session, onLeave }: Props) {
     }
   }, [session.channel])
 
+  const generateSummary = useCallback(async () => {
+    setSummaryError(null)
+    setSummaryBusy(true)
+    try {
+      const res = await fetch('/api/summary', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ segments: displayLines }),
+      })
+      const body: unknown = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        const msg =
+          typeof body === 'object' &&
+          body !== null &&
+          'error' in body &&
+          typeof (body as { error: unknown }).error === 'string'
+            ? (body as { error: string }).error
+            : `Summary request failed (${res.status})`
+        throw new Error(msg)
+      }
+      const data = body as MeetingSummary
+      if (
+        typeof data.summary !== 'string' ||
+        !Array.isArray(data.keyPoints) ||
+        !Array.isArray(data.decisions) ||
+        !Array.isArray(data.actionItems)
+      ) {
+        throw new Error('Summary response had an unexpected shape')
+      }
+      setSummary(data)
+    } catch (err) {
+      setSummaryError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setSummaryBusy(false)
+    }
+  }, [displayLines])
+
   const handleLeave = useCallback(async () => {
     if (sttSession) {
       try {
@@ -243,6 +287,7 @@ function CallRoomInner({ session, onLeave }: Props) {
       : setupError instanceof Error
         ? setupError.message
         : String(setupError)
+  const finalTranscriptLineCount = displayLines.filter((line) => line.isFinal).length
 
   return (
     <div className="interview-root">
@@ -302,59 +347,6 @@ function CallRoomInner({ session, onLeave }: Props) {
         </div>
       )}
 
-      {sttSession && process.env.NODE_ENV === 'development' && (
-        <aside className="interview-dev-note" role="note" aria-label="Development-only STT debug info">
-          <div
-            style={{
-              padding: '0.5rem 0.65rem',
-              fontSize: 12,
-              lineHeight: 1.45,
-              color: '#333',
-              background: '#f0f4f8',
-              border: '1px solid #c5d4e0',
-              borderRadius: 8,
-              display: 'flex',
-              flexWrap: 'wrap',
-              alignItems: 'baseline',
-              gap: '0.35rem 0.5rem',
-            }}
-          >
-            <span
-              style={{
-                fontSize: 10,
-                fontWeight: 700,
-                letterSpacing: '0.04em',
-                textTransform: 'uppercase',
-                color: '#fff',
-                background: '#5c6bc0',
-                padding: '0.15rem 0.4rem',
-                borderRadius: 4,
-              }}
-            >
-              Dev
-            </span>
-            <span>
-              STT agent <code style={{ fontSize: '0.95em' }}>{sttSession.agentId}</code>
-              {sttSession.subBotUid === sttSession.pubBotUid ? (
-                <>
-                  {' '}
-                  · bot UID <code style={{ fontSize: '0.95em' }}>{sttSession.pubBotUid}</code>
-                </>
-              ) : (
-                <>
-                  {' '}
-                  · bots{' '}
-                  <code style={{ fontSize: '0.95em' }}>{sttSession.subBotUid}</code> /{' '}
-                  <code style={{ fontSize: '0.95em' }}>{sttSession.pubBotUid}</code>
-                </>
-              )}
-            </span>
-            <span style={{ color: '#555', flex: '1 1 100%' }}>
-              Console: filter for <code>[stt stream-message]</code> to inspect raw payloads.
-            </span>
-          </div>
-        </aside>
-      )}
 
       <div className="interview-shell">
         <div className="interview-stage-wrap">
@@ -447,16 +439,14 @@ function CallRoomInner({ session, onLeave }: Props) {
             </button>
           </div>
 
-          <div className="interview-footer-bar" aria-hidden>
-            <span />
-            <span />
-            <span />
-            <span />
-            <span />
-            <span />
-            <span />
-            <span />
-          </div>
+          <SummaryPanel
+            summary={summary}
+            loading={summaryBusy}
+            error={summaryError}
+            transcriptLineCount={finalTranscriptLineCount}
+            onGenerate={() => void generateSummary()}
+          />
+
         </div>
 
         <aside
